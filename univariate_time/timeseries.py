@@ -10,8 +10,11 @@ from pandas import datetime
 from pandas import DataFrame, concat, Series
 from sklearn.metrics import mean_squared_error
 from math import sqrt
+import numpy
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
+from keras.models import Sequential
+from keras.layers import Dense, LSTM
 
 
 def fit_lstm(train, batch_size, nb_epoch, neurons):
@@ -27,7 +30,29 @@ def fit_lstm(train, batch_size, nb_epoch, neurons):
         model.fit(X, y, epochs =1, batch_size=batch_size, verbose=0,shuffle=False)
         model.reset_states()
     return model
-
+    
+def scale(train, test):
+    scaler = MinMaxScaler(feature_range=(-1,1))
+    scaler = scaler.fit(train)
+    train = train.reshape(train.shape[0], train.shape[1])
+    train_scaled = scaler.transform(train)
+    
+    test = test.reshape(test.shape[0],test.shape[1])
+    test_scaled = scaler.transform(test)
+    return scaler, train_scaled, test_scaled
+    
+def invert_scale(scaler, X, value):
+    new_row = [x for x in X]+[value]
+    array = numpy.array(new_row)
+    array = array.reshape(1,len(array))
+    inverted = scaler.inverse_transform(array)
+    return inverted[0,-1]
+    
+def forecast_lstm(model, batch_size, X):
+    X=X.reshape(1,1,len(X))
+    yhat = model.predict(X, batch_size=batch_size)
+    return yhat[0,0]
+    
 def timeseries_to_supervised(data, lag=1):
     df=DataFrame(data)
     columns =[df.shift(i) for i in range(1,lag+1)]
@@ -51,9 +76,38 @@ def parser(x):
 
 series = read_csv('shampoo.csv', header=None, parse_dates=[0], index_col =0, squeeze=True, date_parser = parser)
 
-X= series.values
-train, test = X[0:-12], X[-12:]
+raw_values= series.values
+diff_values = difference(raw_values, 1)
 
+supervised = timeseries_to_supervised(diff_values,1)
+supervised_values = supervised.values
+
+train, test = supervised_values[0:-12], supervised_values[-12:]
+
+scaler, train_scaled, test_scaled = scale(train, test)
+
+lstm_model = fit_lstm(train_scaled, 1, 3000, 4)
+train_reshaped = train_scaled[:,0].reshape(len(train_scaled),1,1)
+lstm_model.predict(train_reshaped, batch_size=1)
+
+predictions= list()
+
+for i in range(len(test_scaled)):
+    X, y = test_scaled[i,0:-1], test_scaled[i,-1]
+    yhat = forecast_lstm(lstm_model, 1 , X)
+    
+    yhat = invert_scale(scaler, X, yhat)
+    predictions.append(yhat)
+    expected = raw_values[len(train)+i+1]
+    print('Month=%d, Predicted=%f, Expected=%f' % (i+1, yhat, expected))
+    
+rmse = sqrt(mean_squared_error(raw_values[-12:], predictions))
+print('Test RMSE: %.3f' %rmse)
+
+plt.plot(raw_values[-12:])
+plt.plot(predictions)
+plt.show()
+"""
 history = [x for x in train]
 predictions=list()
 for i in range(len(test)):
@@ -62,16 +116,15 @@ for i in range(len(test)):
     
 rmse = sqrt(mean_squared_error(test, predictions))
 print('RMSE: %.3f' % rmse)
-"""
+
 plt.plot(test)
 plt.plot(predictions)
 plt.show()
-"""
-"""
+
 supervised = timeseries_to_supervised(X,1)      #as supervised
 print(supervised.head())
-"""
-"""
+
+
 #converting to stationary time series
 differenced = difference(series,1)
 print(differenced.head())
@@ -82,7 +135,7 @@ for i in range(len(differenced)):
     inverted.append(value)
 inverted = Series(inverted)
 print(inverted.head())
-"""
+
 
 X=series.values
 X=X.reshape(len(X),1)
@@ -95,3 +148,4 @@ print(scaled_series.head())
 inverted_X = scaler.inverse_transform(scaled_X)
 inverted_series = Series(inverted_X[:,0])
 print(inverted_series.head())
+"""
