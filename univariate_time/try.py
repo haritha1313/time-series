@@ -84,8 +84,7 @@ def forecast_lstm(model, batch_size, X):
 	yhat = model.predict(X, batch_size=batch_size)
 	return yhat[0,0]
 
-# load dataset
-series = read_csv('shampoo.csv', header=0, parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
+series = read_csv('shampoo.csv', header=None, parse_dates=[0], index_col =0, squeeze=True, date_parser = parser)
 
 # transform data to be stationary
 raw_values = series.values
